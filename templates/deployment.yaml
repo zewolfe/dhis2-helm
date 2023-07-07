@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dhis2-core-helm.fullname" . }}
+  labels:
+    {{- include "dhis2-core-helm.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "dhis2-core-helm.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "dhis2-core-helm.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "dhis2-core-helm.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: config-copy
+          image: busybox
+          command: [ 'sh', '-c', 'cp -v /dhis-config-ro/* /dhis-config-rw/ && cp -v /server-xml-ro/* /server-xml-rw/' ]
+          volumeMounts:
+            - name: dhis-config-ro
+              mountPath: /dhis-config-ro
+            - name: dhis-config-rw
+              mountPath: /dhis-config-rw
+            - name: server-xml-rw
+              mountPath: /server-xml-rw
+            - name: server-xml-ro
+              mountPath: /server-xml-ro
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: CATALINA_OPTS
+              value: {{ .Values.dhis2.catalina.opts }}
+            - name: JAVA_OPTS
+              value: "-Dlog4j2.configurationFile={{ .Values.dhis2.home }}/log4j2.xml {{ .Values.dhis2.java.opts }}"
+            - name: DHIS2_HOME
+              value: {{ .Values.dhis2.home }}
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  key:  username
+                  name: {{ .Release.Name }}-database-credentials
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key:  password
+                  name: {{ .Release.Name }}-database-credentials
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          startupProbe:
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            httpGet:
+              path: {{ .Values.probes.startup.path }}
+              port: {{ .Values.probes.startup.port }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: {{ .Values.probes.liveness.port }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: {{ .Values.probes.readiness.port }}
+          volumeMounts:
+            - name: dhis-config-rw
+              mountPath: {{ .Values.dhis2.home }}
+              readOnly: false
+            - name: server-xml-rw
+              mountPath: /usr/local/tomcat/conf/server.xml
+              subPath: server.xml
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: dhis-config-rw
+          emptyDir: { }
+        - name: dhis-config-ro
+          configMap:
+            name: {{ include "dhis2-core-helm.fullname" . }}
+            items:
+              - key: dhis.conf
+                path: dhis.conf
+              - key: dhis-google-auth.json
+                path: dhis-google-auth.json
+              - key: log4j2.xml
+                path: log4j2.xml
+        - name: server-xml-rw
+          emptyDir: { }
+        - name: server-xml-ro
+          configMap:
+            name: {{ include "dhis2-core-helm.fullname" . }}
+            items:
+              - key: server.xml
+                path: server.xml
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

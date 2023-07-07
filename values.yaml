@@ -1,0 +1,179 @@
+# Default values for dhis2-core-helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: "dhis2/core"
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "2.39.1.1"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+probes:
+  startup:
+    failureThreshold: 30
+    periodSeconds: 10
+    path: /
+    port: 8080
+  readiness:
+    path: /
+    port: 8080
+  liveness:
+    path: /
+    port: 8080
+
+dhis2:
+  home: "/opt/dhis2"
+  catalina:
+    opts: "-Dcontext.path=''"
+  server:
+    xml: "config/server.xml"
+  java:
+    opts: ""
+  # CHANGE ME
+  db:
+    username: dhis
+    password: dhis
+  google:
+    auth:
+      projectId: ""
+      privateKeyId: ""
+      privateKey: ""
+      clientEmail: ""
+      clientId: ""
+
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false # To be changed once dhis2-core and Tomcat are configured to log to stdout without needing write access.
+  runAsNonRoot: true
+  runAsUser: 65534
+  runAsGroup: 65534
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: dhis2-core.127.0.0.1.nip.io
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+postgresql:
+  image:
+    repository: dhis2/postgresql-curl
+    pullPolicy: IfNotPresent
+    tag: 14
+    debug: true
+
+  primary:
+    initdb:
+      scripts:
+        seed.sh: |
+          #!/usr/bin/env bash
+
+          set -euo pipefail
+
+          export PGPASSWORD=$POSTGRES_POSTGRES_PASSWORD
+          echo "PASS--->"
+          echo $POSTGRES_POSTGRES_PASSWORD
+          echo "pass: $PGPASSWORD"
+
+          function exec_psql() {
+            psql -U postgres -qAt -d dhis2 -c "$1"
+          }
+
+          SEED_URL="https://databases.dhis2.org/sierra-leone/2.39.1/dhis2-db-sierra-leone.sql.gz"
+          echo "Seed url: $SEED_URL"
+          tmp_file=$(mktemp)
+          curl --connect-timeout 10 --retry 5 --retry-delay 1 --fail -L "$SEED_URL" > "$tmp_file"
+          gunzip -v -c "$tmp_file" | psql -U postgres -d dhis2
+          rm $tmp_file
+
+          ## Change ownership to dhis
+          # Tables
+          entities=$(exec_psql "select tablename from pg_tables where schemaname = 'public'")
+          for entity in $entities; do
+          echo "Changing owner of $entity to dhis"
+          exec_psql "alter table \"$entity\" owner to dhis"
+          done
+
+          # Sequences
+          entities=$(exec_psql "select sequence_name from information_schema.sequences where sequence_schema = 'public'")
+          for entity in $entities; do
+          echo "Changing owner of $entity to dhis"
+          exec_psql "alter sequence \"$entity\" owner to dhis"
+          done
+
+          # Views
+          entities=$(exec_psql "select table_name from information_schema.views where table_schema = 'public'")
+          for entity in $entities; do
+          echo "Changing owner of $entity to dhis"
+          exec_psql "alter view \"$entity\" owner to dhis"
+          done
+
+  auth:
+    username: dhis
+    password: dhis
+    database: dhis2
+
+  persistence:
+    size: 5Gi
+

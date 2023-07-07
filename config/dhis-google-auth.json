@@ -1,0 +1,12 @@
+{
+  "type": "service_account",
+  "project_id": "{{ .Values.dhis2.google.auth.projectId }}",
+  "private_key_id": "{{ .Values.dhis2.google.auth.privateKeyId }}",
+  "private_key": "{{ .Values.dhis2.google.auth.privateKey }}",
+  "client_email": "{{ .Values.dhis2.google.auth.clientEmail }}",
+  "client_id": "{{ .Values.dhis2.google.auth.clientId }}",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/dhis2-demo%40dhis2-gis.iam.gserviceaccount.com"
+}
